@@ -1,0 +1,45 @@
+﻿<Window x:Class="MonitorMemory.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:MonitorMemory" xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
+        mc:Ignorable="d"
+        Title="メモリ監視ツール" Width="400" Height="200">
+    <Window.Resources>
+        <local:ByteConverter x:Key="ByteConverter"/>
+    </Window.Resources>
+    <Grid Margin="5">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="7*"/>
+                <ColumnDefinition Width="27*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Column="0" Text="実行パス："/>
+            <TextBox Grid.Column="1" Margin="5,0,0,0" Text="{Binding ProgramPath.Value, UpdateSourceTrigger=PropertyChanged}" Grid.ColumnSpan="2">
+                <i:Interaction.Behaviors>
+                    <local:PathDragAndDropBehavior DropFiles="{Binding DropProgramPaths.Value, Mode=OneWayToSource}" />
+                </i:Interaction.Behaviors>
+            </TextBox>
+            <Button Grid.Column="3" Margin="5,0,0,0" Width="50" Content="実行" Command="{Binding RunCommand}"/>
+        </Grid>
+        <DockPanel Grid.Row="1" Margin="5,0,0,0">
+            <TextBlock DockPanel.Dock="Left" Text=" 最大メモリ使用量:"/>
+            <TextBlock FontSize="24" Text="{Binding MaxMemory.Value, Converter={StaticResource ByteConverter}}" HorizontalAlignment="Center"/>
+        </DockPanel>
+        <Button Grid.Row="2" Margin="0,5,0,0" Content="クリア" Command="{Binding ClearMemoryCommand}"/>
+        <TextBox Grid.Row="3" Margin="0,5,0,0" Text="{Binding LogMessage.Value}" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Visible" IsReadOnly="True"/>
+    </Grid>
+</Window>
