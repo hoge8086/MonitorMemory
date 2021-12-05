@@ -5,8 +5,12 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reactive.Concurrency;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace MonitorMemory
@@ -16,6 +20,7 @@ namespace MonitorMemory
         public const string MemoryLogDirectory  = "Log";
         public ReactiveCommand RunCommand { get; set; }
         public ReactiveCommand ClearMemoryCommand { get; set; }
+        public ReactiveCommand StopMonitorCommand { get; set; }
 
         public ReactiveProperty<long> MaxMemory { get; set; }
         public ReactiveProperty<string> ProgramPath { get; set; }
@@ -26,7 +31,8 @@ namespace MonitorMemory
 
         private ReactiveProperty<bool> isRunning;
 
-        
+        private CancellationTokenSource cancelTokenSrouce = null;
+
         public MainWindowViewModel()
         {
             MaxMemory = new ReactiveProperty<long>();
@@ -39,59 +45,79 @@ namespace MonitorMemory
             ClearMemoryCommand.Subscribe(() => MaxMemory.Value = 0);
             DropProgramPaths.Subscribe(x => ProgramPath.Value = x != null ? x[0] : ProgramPath.Value);
 
+            StopMonitorCommand = isRunning.ToReactiveCommand();
+            StopMonitorCommand.Subscribe(x =>
+            {
+                if(cancelTokenSrouce != null)
+                    cancelTokenSrouce.Cancel();
+            });
+
             RunCommand = new []{
                 isRunning.Inverse(),
                 ProgramPath.Select(x => !string.IsNullOrEmpty(x)), 
             }
             .CombineLatestValuesAreAllTrue()
             .ToReactiveCommand();
-            RunCommand.Subscribe(async () =>
+            RunCommand.Subscribe(() =>
             {
-                Process process = null;
+                isRunning.Value = true;
+                MaxMemory.Value = 0;
+                Log("プロセスを起動して、モニタを開始します。");
                 var memLogPath = CreateMemoryLogPath(ProgramPath.Value);
 
-                try
-                {
-                    if (!Directory.Exists(MemoryLogDirectory))
-                        Directory.CreateDirectory(MemoryLogDirectory);
+                cancelTokenSrouce = new CancellationTokenSource();
+                // メモリ使用量監視
+                var monitor = CreateMonitorMemoryObserbable(ProgramPath.Value, 1, cancelTokenSrouce.Token);
 
-                    process = Process.Start(ProgramPath.Value);
-                    isRunning.Value = true;
-                    MaxMemory.Value = 0;
-                    Log("プロセスが開始しました。モニタを開始します。");
-
-                    using (var memLog = new StreamWriter(memLogPath, true))
+                // メモリ使用量を購読
+                monitor.Finally(() =>
                     {
-
-                        memLog.WriteLine("DateTime,MemorySize");
-                        do
-                        {
-                            process.Refresh();
-                            // タスクマネージャの「コミットサイズ」と大体同じ
-                            MaxMemory.Value = Math.Max(MaxMemory.Value, process.PrivateMemorySize64);
-
-                            try
-                            {
-                                memLog.WriteLine($"{DateTime.Now},{process.PrivateMemorySize64}");
-                            }
-                            catch(Exception ex)
-                            {
-                                Log(ex.Message);
-                            }
-
-                            await Task.Delay(1000);
-                        } while (!process.HasExited);
-
-
-                        Log("プロセスが終了しました。モニタを停止します。");
-                        if(File.Exists(memLogPath))
+                        // モニタ終了時の処理
+                        Log("モニタを停止しました。");
+                        if (File.Exists(memLogPath))
                             Log($"メモリ使用量の履歴を{memLogPath}に格納しています。");
 
-                    }
-                }
-                catch (Exception ex)
+                        isRunning.Value = false;
+                        cancelTokenSrouce = null;
+                    })
+                    .Subscribe(x => {
+                        // 現在のメモリ使用量を取得
+                        MaxMemory.Value = Math.Max(MaxMemory.Value, x);
+                        LogMemory(memLogPath, x);
+                    },
+                    (ex) => {
+                        // エラー時の処理
+                        Log(ex.Message);
+                    });
+                monitor.Connect();
+            });
+        }
+        public IConnectableObservable<long> CreateMonitorMemoryObserbable(string programPath, int interval, CancellationToken cancellation)
+        {
+            return Observable.Create<long>((observer) =>
+            {
+                Process process = null;
+                try
                 {
-                    Log(ex.Message);
+                    process = Process.Start(programPath);
+                    do
+                    {
+                        if (cancellation.IsCancellationRequested)
+                            break;
+
+                        process.Refresh();
+                        // タスクマネージャの「コミットサイズ」と大体同じ
+                        observer.OnNext(process.PrivateMemorySize64);
+                        Task.Delay(interval * 1000 ).Wait();
+                    } while (!process.HasExited);
+
+
+                    // MEMO:OnError()の後にOnCompleted()を呼んでも、Subscribe()側で完了通知は呼ばれない
+                    observer.OnCompleted();
+
+                }catch(Exception ex)
+                {
+                    observer.OnError(ex);
                 }
                 finally
                 {
@@ -100,9 +126,37 @@ namespace MonitorMemory
                         process.Dispose();
                         process = null;
                     }
-                    isRunning.Value = false;
                 }
-            });
+
+                return Disposable.Empty;
+            }).SubscribeOn(Scheduler.ThreadPool).Publish();
+        }
+        
+        private void LogMemory(string memLogPath, long memorySize)
+        {
+            if (!Directory.Exists(MemoryLogDirectory))
+                Directory.CreateDirectory(MemoryLogDirectory);
+
+            if (!File.Exists(memLogPath))
+                WriteMemoryLog("DateTime,MemorySize", false);
+
+            WriteMemoryLog($"{DateTime.Now},{memorySize}", true);
+
+
+            void  WriteMemoryLog(string log, bool append)
+            {
+                try
+                {
+                    using (var memLog = new StreamWriter(memLogPath, append))
+                    {
+                        memLog.WriteLine(log);
+                    }
+                }catch(Exception ex)
+                {
+                    Log(ex.Message);
+                }
+            }
+
         }
         private string CreateMemoryLogPath(string programPath)
         {
@@ -117,7 +171,7 @@ namespace MonitorMemory
         {
             if (isRunning.Value)
             {
-                System.Windows.MessageBox.Show("実行中のアプリケーションを終了してください。", "メモリ監視ツール");
+                System.Windows.MessageBox.Show("モニタを停止してください。", "メモリ監視ツール");
                 return false;
             }
 
@@ -125,7 +179,5 @@ namespace MonitorMemory
             Properties.Settings.Default.Save();
             return true;
         }
-
-
     }
 }

@@ -14,7 +14,9 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <Grid Grid.Row="0">
             <Grid.ColumnDefinitions>
@@ -35,11 +37,12 @@
             </TextBox>
             <Button Grid.Column="3" Margin="5,0,0,0" Width="50" Content="実行" Command="{Binding RunCommand}"/>
         </Grid>
-        <DockPanel Grid.Row="1" Margin="5,0,0,0">
-            <TextBlock DockPanel.Dock="Left" Text=" 最大メモリ使用量:"/>
-            <TextBlock FontSize="24" Text="{Binding MaxMemory.Value, Converter={StaticResource ByteConverter}}" HorizontalAlignment="Center"/>
-        </DockPanel>
-        <Button Grid.Row="2" Margin="0,5,0,0" Content="クリア" Command="{Binding ClearMemoryCommand}"/>
-        <TextBox Grid.Row="3" Margin="0,5,0,0" Text="{Binding LogMessage.Value}" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Visible" IsReadOnly="True"/>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,5,0,0">
+            <TextBlock VerticalAlignment="Center" Text=" 最大メモリ使用量:"/>
+            <Button VerticalAlignment="Center" Margin="5,0,0,0" Padding="5,0,5,0" Content="リセット" Command="{Binding ClearMemoryCommand}"/> 
+        </StackPanel>
+        <TextBlock Grid.Row="2" Margin="0,5,0,0" FontSize="24" Text="{Binding MaxMemory.Value, Converter={StaticResource ByteConverter}}" HorizontalAlignment="Center"/>
+        <TextBox Grid.Row="4" Margin="0,5,0,0" Text="{Binding LogMessage.Value}" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Visible" IsReadOnly="True"/>
+        <Button Grid.Row="5" Margin="0,5,0,0" Content="モニタ停止" Command="{Binding StopMonitorCommand}"/>
     </Grid>
 </Window>
